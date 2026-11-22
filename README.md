@@ -32,14 +32,7 @@ Com apenas **uma linha de código**, o `ctk-idiomas` injeta um menu suspenso mod
 
 ## 📦 Instalação
 
-### Instalação local (Modo Desenvolvimento)
-Clone ou baixe este repositório, abra o terminal na pasta raiz (`ctk_idiomas/`) e execute:
-
-```bash
-pip install -e .
-```
-
-### Instalação via GitHub
+### Instalação via GitHub/Python
 Em qualquer projeto ou computador, instale diretamente pelo terminal:
 
 ```bash
