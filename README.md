@@ -100,6 +100,8 @@ lang = Idiomas(
 
 Para analisar outros arquivos Python, passe seus caminhos em `arquivos_codigo` junto com `analisar_codigo=True`. São pré-registradas chamadas com uma string literal como primeiro argumento, por exemplo `lang.t("Falha de conexão")`.
 
+Para continuar editando um idioma existente, use o idioma principal como base e selecione ou digite o idioma de destino existente. As traduções já preenchidas são carregadas; as que ainda estiverem em branco usam o texto original como fallback.
+
 Para ocultar a engrenagem e abrir o menu a partir de um controle próprio:
 
 ```python

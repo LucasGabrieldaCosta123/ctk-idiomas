@@ -639,7 +639,9 @@ class JanelaTradutor(ctk.CTkToplevel):
         frame_topo.pack(fill="x", padx=12, pady=(12, 6))
 
         idiomas = [s for s in self.ini.config.sections() if s != "Config"]
-        idioma_padrao = idiomas[0] if idiomas else self.ini.idioma_principal
+        idioma_padrao = self.ini.idioma_principal
+        if idioma_padrao not in idiomas and idiomas:
+            idioma_padrao = idiomas[0]
 
         frame_base = ctk.CTkFrame(frame_topo, fg_color="transparent")
         frame_base.pack(side="left", padx=10, pady=8)
@@ -652,8 +654,7 @@ class JanelaTradutor(ctk.CTkToplevel):
             command=lambda e: self._atualizar_tabela(base=e),
             width=180,
         )
-        atual = self.ini.get_config("idioma", idioma_padrao)
-        self.combo_base.set(atual if atual in idiomas else idioma_padrao)
+        self.combo_base.set(idioma_padrao)
         self.combo_base.pack()
 
         frame_novo = ctk.CTkFrame(frame_topo, fg_color="transparent")
