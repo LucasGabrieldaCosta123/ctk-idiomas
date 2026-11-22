@@ -1,0 +1,30 @@
+name: Publicar no PyPI
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Instalar ferramenta de build
+        run: pip install build
+
+      - name: Gerar pacote (wheel e tar.gz)
+        run: python -m build
+
+      - name: Publicar no PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
