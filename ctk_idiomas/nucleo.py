@@ -7,14 +7,20 @@ import customtkinter as ctk
 
 class Idiomas:
     """
-    Plug-in Plug & Play para CustomTkinter:
-    - Captura automática de título, labels, botões, checkboxes, switches, CTkEntry e CTkTabview
-    - Função auxiliar `lang.t("Texto dinâmico")` para mensagens em tempo de execução
-    - Menu suspenso arredondado com engrenagem ⚙️
-    - Janela Translate pré-preenchida para traduzir apenas o que você souber
+    Plug-in Plug & Play para CustomTkinter (v0.1.1):
+    - Posicionamento via .place() (100% compatível com .grid() e .pack())
+    - Varredura automática de título, labels, botões, checkboxes, switches, CTkEntry e CTkTabview
+    - Suporte a textos dinâmicos via `lang.t("Texto")` e callback opcional `ao_mudar_idioma`
+    - Menu suspenso arredondado com engrenagem ⚙️ e janela Translate integrada
     """
 
-    def __init__(self, janela: ctk.CTk, idioma_principal: str, arquivo="app.ini"):
+    def __init__(
+        self,
+        janela: ctk.CTk,
+        idioma_principal: str,
+        arquivo="app.ini",
+        ao_mudar_idioma=None,
+    ):
         if not idioma_principal or not idioma_principal.strip():
             raise ValueError(
                 "Você deve definir 'idioma_principal' (ex: 'Português (Brasil)' ou 'English')."
@@ -23,10 +29,10 @@ class Idiomas:
         self.janela = janela
         self.idioma_principal = idioma_principal.strip()
         self.arquivo = os.path.abspath(arquivo)
+        self.ao_mudar_idioma = ao_mudar_idioma
         self.ultima_modificacao = 0
         self.menu_popup = None
 
-        # {chave: (widget, propriedade)}
         self.mapa_widgets = {}
 
         self.config = configparser.ConfigParser(interpolation=None)
@@ -40,7 +46,7 @@ class Idiomas:
         if self.idioma_principal not in self.config:
             self.config.add_section(self.idioma_principal)
 
-        self._injetar_barra_superior()
+        self._injetar_botao_engrenagem()
         self.janela.after(100, self._inicializar_captura)
 
     def _inicializar_captura(self):
@@ -63,17 +69,15 @@ class Idiomas:
                 "Translate" if eh_ingles else "Traduzir"
             )
 
-        # 1. Título da janela
         titulo_atual = self.janela.title()
         if titulo_atual:
             self.mapa_widgets["00_titulo"] = (self.janela, "title")
             if "00_titulo" not in self.config[self.idioma_principal]:
                 self.config[self.idioma_principal]["00_titulo"] = titulo_atual
 
-        # 2. Varre todos os widgets da janela (incluindo CTkTabview e CTkEntry)
         contador = 1
         for widget in self._listar_todos_widgets(self.janela):
-            if self._pertence_a_barra_topo(
+            if self._pertence_ao_botao_engrenagem(
                 widget
             ) or self._pertence_a_tabview_interno(widget):
                 continue
@@ -112,26 +116,20 @@ class Idiomas:
         self.aplicar_idioma_na_tela()
         self._iniciar_monitoramento()
 
-    # --- FUNÇÃO PARA TEXTOS DINÂMICOS (messagebox, alertas, textos pós-clique) ---
     def t(self, texto_original: str, **kwargs) -> str:
-        """
-        Registra automaticamente mensagens dinâmicas no .ini e retorna a tradução.
-        Exemplo: messagebox.showinfo("Aviso", lang.t("Arquivo salvo com sucesso!"))
-        """
+        """Registra automaticamente mensagens dinâmicas no .ini e retorna a tradução."""
         if not texto_original:
             return ""
 
         if self.idioma_principal not in self.config:
             self.config.add_section(self.idioma_principal)
 
-        # Procura se esse texto dinâmico já foi registrado antes
         chave_encontrada = None
         for k, v in self.config[self.idioma_principal].items():
             if k.startswith("msg_") and v == texto_original:
                 chave_encontrada = k
                 break
 
-        # Se ainda não existe no .ini, cria uma chave msg_01, msg_02...
         if not chave_encontrada:
             msgs_existentes = [
                 k
@@ -153,7 +151,6 @@ class Idiomas:
 
         return resultado.format(**kwargs) if kwargs else resultado
 
-    # Alias caso prefira escrever lang.traduzir("...")
     traduzir = t
 
     def _listar_todos_widgets(self, container):
@@ -165,13 +162,10 @@ class Idiomas:
             lista.extend(self._listar_todos_widgets(filho))
         return lista
 
-    def _pertence_a_barra_topo(self, widget):
-        atual = widget
-        while atual is not None:
-            if atual == self.barra_topo:
-                return True
-            atual = atual.master
-        return False
+    def _pertence_ao_botao_engrenagem(self, widget):
+        return (
+            widget == self.btn_engrenagem or widget.master == self.btn_engrenagem
+        )
 
     def _pertence_a_tabview_interno(self, widget):
         if isinstance(widget.master, ctk.CTkSegmentedButton) and isinstance(
@@ -220,14 +214,15 @@ class Idiomas:
             elif prop == "tab":
                 widget.configure(text=texto_final)
 
-    def _injetar_barra_superior(self):
-        self.barra_topo = ctk.CTkFrame(
-            self.janela, fg_color="transparent", height=36
-        )
-        self.barra_topo.pack(side="top", fill="x", padx=8, pady=(6, 0))
+        if self.ao_mudar_idioma:
+            self.ao_mudar_idioma()
 
+        self.btn_engrenagem.lift()
+
+    def _injetar_botao_engrenagem(self):
+        """Usa .place() no canto superior direito para nunca conflitar com .grid() ou .pack()."""
         self.btn_engrenagem = ctk.CTkButton(
-            self.barra_topo,
+            self.janela,
             text="⚙️",
             width=34,
             height=34,
@@ -237,7 +232,8 @@ class Idiomas:
             hover_color=("#E2E2E2", "#2F2F2F"),
             command=self._alternar_menu,
         )
-        self.btn_engrenagem.pack(side="right")
+        self.btn_engrenagem.place(relx=1.0, x=-10, y=8, anchor="ne")
+        self.btn_engrenagem.lift()
 
     def _alternar_menu(self):
         if self.menu_popup is not None and self.menu_popup.winfo_exists():
@@ -402,11 +398,7 @@ class Idiomas:
 
 
 class JanelaTradutor(ctk.CTkToplevel):
-    """
-    Janela integrada de tradução:
-    Já preenche todos os campos com os textos do idioma selecionado,
-    permitindo traduzir apenas o que você souber e manter o resto original.
-    """
+    """Janela integrada de tradução com pré-preenchimento do idioma base."""
 
     def __init__(self, master, gerenciador: Idiomas):
         super().__init__(master)
@@ -540,11 +532,6 @@ class JanelaTradutor(ctk.CTkToplevel):
         self.txt_traducao.bind("<Down>", lambda e: self._mover_selecao(1))
 
     def _atualizar_tabela(self, base=None, alvo=None):
-        """
-        Preenche a coluna da direita com as traduções já existentes do idioma alvo;
-        se o idioma alvo ainda não existir ou faltar alguma linha, já preenche com
-        o texto do idioma base para você editar apenas o que souber!
-        """
         self.ini.recarregar()
         self.tree.delete(*self.tree.get_children())
         self.dados_traducao.clear()
@@ -556,9 +543,7 @@ class JanelaTradutor(ctk.CTkToplevel):
             return
 
         for chave, valor_base in self.ini.config[idioma_base].items():
-            # Começa preenchido com o texto base
             valor_trad = valor_base
-            # Se o idioma alvo já existe e tem texto não-vazio nessa chave, usa ele
             if (
                 idioma_alvo in self.ini.config
                 and chave in self.ini.config[idioma_alvo]
