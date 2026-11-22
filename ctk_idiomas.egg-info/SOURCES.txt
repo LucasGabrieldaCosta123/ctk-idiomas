@@ -1,0 +1,9 @@
+README.md
+pyproject.toml
+ctk_idiomas/__init__.py
+ctk_idiomas/nucleo.py
+ctk_idiomas.egg-info/PKG-INFO
+ctk_idiomas.egg-info/SOURCES.txt
+ctk_idiomas.egg-info/dependency_links.txt
+ctk_idiomas.egg-info/requires.txt
+ctk_idiomas.egg-info/top_level.txt
