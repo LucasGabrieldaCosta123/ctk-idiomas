@@ -18,7 +18,7 @@ Com apenas **uma linha de código**, o `ctk-idiomas` injeta um menu suspenso mod
 - **Mensagens Dinâmicas (`lang.t`):** Registra e traduz textos exibidos em tempo de execução (como `messagebox` ou textos pós-clique), com suporte a variáveis (`{nome}`). Opcionalmente, analisa chamadas literais no código com `ast` durante a inicialização.
 - **Janelas Secundárias:** Registra `CTkToplevel` criadas depois da janela principal para captura e atualização de idioma.
 - **Arquivo configurável:** `caminho_ini` permite salvar o INI em um local escolhido, inclusive em uma pasta do usuário.
-- **Editor Visual Integrado (`Translate`):** Janela embutida com tabela lado a lado, navegação por teclado (`↑` / `↓`), pré-preenchimento inteligente (mantém o texto original nas frases não traduzidas) e exportação para a área de transferência.
+- **Editor Visual Integrado (`Translate`):** Janela embutida com tabela lado a lado, navegação por teclado (`↑` / `↓`), edição manual no campo inferior direito, pré-preenchimento inteligente (mantém o texto original nas frases não traduzidas) e exportação para a área de transferência. O pacote não traduz automaticamente o conteúdo.
 - **Hot Reload em Tempo Real:** Monitora o arquivo `app.ini` em segundo plano — editou e salvou no bloco de notas, a interface atualiza na hora sem reiniciar o app.
 
 ---

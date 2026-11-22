@@ -619,6 +619,11 @@ class JanelaTradutor(ctk.CTkToplevel):
         self.ini = gerenciador
         self.dados_traducao = {}
         self.chave_atual = None
+        self._idioma_base_tabela = None
+        self._idioma_alvo_tabela = None
+
+        if os.path.exists(self.ini.arquivo):
+            self.ini.recarregar()
 
         self.title("Translate")
         self.geometry("820x520")
@@ -746,12 +751,19 @@ class JanelaTradutor(ctk.CTkToplevel):
         self.txt_traducao.bind("<Down>", lambda e: self._mover_selecao(1))
 
     def _atualizar_tabela(self, base=None, alvo=None):
-        self.ini.recarregar()
-        self.tree.delete(*self.tree.get_children())
-        self.dados_traducao.clear()
-
         idioma_base = base if base else self.combo_base.get()
         idioma_alvo = alvo if alvo else self.entry_novo_idioma.get().strip()
+        if (
+            idioma_base == self._idioma_base_tabela
+            and idioma_alvo == self._idioma_alvo_tabela
+        ):
+            return
+
+        self._idioma_base_tabela = idioma_base
+        self._idioma_alvo_tabela = idioma_alvo
+        self.tree.delete(*self.tree.get_children())
+        self.dados_traducao.clear()
+        self.chave_atual = None
 
         if idioma_base not in self.ini.config:
             return
@@ -781,6 +793,8 @@ class JanelaTradutor(ctk.CTkToplevel):
         if not selecionado:
             return
 
+        if self.chave_atual and self.chave_atual != selecionado[0]:
+            self._guardar_traducao_atual()
         self.chave_atual = selecionado[0]
         valores = self.tree.item(self.chave_atual, "values")
 
@@ -795,7 +809,13 @@ class JanelaTradutor(ctk.CTkToplevel):
         )
 
     def _ao_digitar_traducao(self, event=None):
-        if not self.chave_atual:
+        self._guardar_traducao_atual()
+
+    def _guardar_traducao_atual(self):
+        if (
+            not self.chave_atual
+            or self.chave_atual not in self.tree.get_children()
+        ):
             return
         texto = self.txt_traducao.get("1.0", "end-1c").replace("\n", "\\n")
         self.dados_traducao[self.chave_atual] = texto
@@ -832,6 +852,7 @@ class JanelaTradutor(ctk.CTkToplevel):
             )
             return
 
+        self._guardar_traducao_atual()
         if novo_idioma not in self.ini.config:
             self.ini.config.add_section(novo_idioma)
 
