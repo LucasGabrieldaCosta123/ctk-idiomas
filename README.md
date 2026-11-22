@@ -22,8 +22,8 @@ Com apenas **uma linha de código**, o `ctk-idiomas` injeta um menu suspenso mod
 
 ## 🛠️ Ferramentas e Tecnologias Utilizadas
 
-- **[Python 3.8+](https://python.org):** Linguagem base do projeto.
-- **[CustomTkinter](https://github.com):** Construção dos componentes visuais modernos, janelas auxiliares e menu suspenso estilizado.
+- **[Python 3.8+](https://www.python.org/downloads/release/python-3100/):** Linguagem base do projeto.
+- **[CustomTkinter](https://github.com/tomschimansky/customtkinter):** Construção dos componentes visuais modernos, janelas auxiliares e menu suspenso estilizado.
 - **`configparser` (Biblioteca Padrão):** Leitura, escrita e gerenciamento estruturado dos arquivos `.ini` em UTF-8.
 - **`tkinter` / `ttk` (Biblioteca Padrão):** Renderização da tabela de tradução (`Treeview`) e controle de eventos de foco/teclado.
 - **`setuptools`:** Empacotamento padrão PEP 621 via `pyproject.toml` para instalação universal via `pip`.
