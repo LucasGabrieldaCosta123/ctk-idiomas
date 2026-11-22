@@ -43,7 +43,7 @@ pip install -e .
 Em qualquer projeto ou computador, instale diretamente pelo terminal:
 
 ```bash
-pip install https://github.com/LucasGabrieldaCosta123/ctk-idiomas/archive/refs/heads/main.zip
+pip install ctk-idiomas
 ```
 
 ---

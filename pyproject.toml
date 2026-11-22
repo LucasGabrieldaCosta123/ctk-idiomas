@@ -8,6 +8,9 @@ version = "0.1.0"
 description = "Sistema Plug & Play de idiomas e tradução visual para CustomTkinter"
 readme = "README.md"
 requires-python = ">=3.8"
+authors = [
+    { name = "Lucas Gabriel da Costa" }
+]
 dependencies = [
     "customtkinter>=5.0.0"
 ]
