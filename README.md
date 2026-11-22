@@ -8,13 +8,16 @@ Com apenas **uma linha de código**, o `ctk-idiomas` injeta um menu suspenso mod
 
 ## ✨ Funcionalidades
 
-- **Zero Configuração de Layout:** Injeta automaticamente um botão de engrenagem (`⚙️`) no canto superior direito da janela com menu suspenso arredondado.
+- **Configuração do menu:** O botão de engrenagem (`⚙️`) pode ser posicionado nos quatro cantos, ocultado ou aberto por um botão próprio. Seu fundo é transparente.
 - **Varredura Automática de Widgets:** Detecta e traduz sozinho:
   - Título da janela (`app.title`)
   - Textos de `CTkLabel`, `CTkButton`, `CTkCheckBox`, `CTkRadioButton` e `CTkSwitch`
   - Campos de entrada `CTkEntry` (`placeholder_text`)
   - Títulos das abas de `CTkTabview`
-- **Mensagens Dinâmicas (`lang.t`):** Registra e traduz textos exibidos apenas em tempo de execução (como `messagebox` ou textos pós-clique), com suporte a variáveis (`{nome}`).
+  - Opções e seleção atual de `CTkOptionMenu`, `CTkComboBox` e `CTkSegmentedButton`
+- **Mensagens Dinâmicas (`lang.t`):** Registra e traduz textos exibidos em tempo de execução (como `messagebox` ou textos pós-clique), com suporte a variáveis (`{nome}`). Opcionalmente, analisa chamadas literais no código com `ast` durante a inicialização.
+- **Janelas Secundárias:** Registra `CTkToplevel` criadas depois da janela principal para captura e atualização de idioma.
+- **Arquivo configurável:** `caminho_ini` permite salvar o INI em um local escolhido, inclusive em uma pasta do usuário.
 - **Editor Visual Integrado (`Translate`):** Janela embutida com tabela lado a lado, navegação por teclado (`↑` / `↓`), pré-preenchimento inteligente (mantém o texto original nas frases não traduzidas) e exportação para a área de transferência.
 - **Hot Reload em Tempo Real:** Monitora o arquivo `app.ini` em segundo plano — editou e salvou no bloco de notas, a interface atualiza na hora sem reiniciar o app.
 
@@ -81,12 +84,45 @@ ctk.CTkLabel(aba_sobre, text="Versão 1.0").pack(pady=30)
 app.mainloop()
 ```
 
+### Opções
+
+Os parâmetros abaixo são opcionais; os padrões preservam o comportamento atual:
+
+```python
+lang = Idiomas(
+    app,
+    idioma_principal="Português (Brasil)",
+    caminho_ini="~/AppData/Local/MeuApp/app.ini",
+    analisar_codigo=True,  # analisa o arquivo principal da aplicação
+    posicao="bottom-right",  # top-left, top-right, bottom-left ou bottom-right
+)
+```
+
+Para analisar outros arquivos Python, passe seus caminhos em `arquivos_codigo` junto com `analisar_codigo=True`. São pré-registradas chamadas com uma string literal como primeiro argumento, por exemplo `lang.t("Falha de conexão")`.
+
+Para ocultar a engrenagem e abrir o menu a partir de um controle próprio:
+
+```python
+lang = Idiomas(
+    app, idioma_principal="Português (Brasil)", mostrar_botao=False
+)
+ctk.CTkButton(app, text="Idiomas", command=lang.abrir_menu).pack()
+```
+
+Registre cada janela secundária depois de criar seus widgets:
+
+```python
+janela = ctk.CTkToplevel(app)
+ctk.CTkLabel(janela, text="Configurações").pack()
+lang.registrar_janela(janela)
+```
+
 ---
 
 ## ⚙️ Como Funciona por Dentro
 
-1. **Captura Pós-Montagem (`after`):** Assim que o aplicativo inicia, o `Idiomas` aguarda a montagem dos widgets na tela e percorre recursivamente toda a árvore de componentes (`winfo_children`), mapeando cada widget para um ID numérico (`01`, `02`, `03`...).
-2. **Geração do `app.ini`:** Na primeira execução, cria o arquivo `app.ini` em UTF-8 na pasta do projeto contendo a seção `[Config]` e a seção do idioma principal definida pelo desenvolvedor.
+1. **Captura Pós-Montagem (`after`):** Assim que o aplicativo inicia, o `Idiomas` aguarda a montagem dos widgets e percorre recursivamente a árvore de componentes (`winfo_children`). Os textos recebem chaves estáveis derivadas de seu conteúdo, evitando que a inserção ou reordenação de widgets desloque as traduções. Chaves numéricas de versões anteriores são migradas quando o texto original coincide.
+2. **Geração do INI:** Na primeira execução, cria o arquivo em UTF-8 com a seção `[Config]` e a seção do idioma principal. O caminho padrão continua sendo `app.ini` na pasta atual; `caminho_ini` permite substituí-lo.
 3. **Fallback Seguro:** Caso um usuário crie uma tradução parcial (traduzindo apenas algumas frases), o sistema preenche automaticamente as linhas restantes com o texto do idioma base, evitando campos vazios ou erros na interface.
 4. **Monitoramento de Arquivo:** A cada `1000ms`, verifica o *timestamp* (`os.path.getmtime`) do `app.ini`. Se houver alteração externa no disco, relê o arquivo e reaplica os textos na janela instantaneamente.
 
@@ -101,14 +137,14 @@ idioma = Português (Brasil)
 [Português (Brasil)]
 _lang_label = Linguagem:
 _translate_btn = Traduzir
-00_titulo = Meu Aplicativo
-01 = Início
-02 = Sobre
-03 = Digite seu nome
-04 = Confirmar
-05 = Versão 1.0
-msg_01 = Aviso
-msg_02 = Olá, {nome}! Bem-vindo ao sistema.
+title_a1b2c3d4e5f6 = Meu Aplicativo
+tab_112233445566 = Início
+tab_aabbccddeeff = Sobre
+placeholder_123456789abc = Digite seu nome
+txt_abcdef123456 = Confirmar
+txt_123abc456def = Versão 1.0
+msg_a12b34c56d78 = Aviso
+msg_9876abcdef01 = Olá, {nome}! Bem-vindo ao sistema.
 ```
 
 ---

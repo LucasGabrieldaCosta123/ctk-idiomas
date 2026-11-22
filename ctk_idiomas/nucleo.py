@@ -1,4 +1,6 @@
+import ast
 import configparser
+import hashlib
 import os
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -9,7 +11,7 @@ class Idiomas:
     """
     Plug-in Plug & Play para CustomTkinter (v0.1.1):
     - Posicionamento via .place() (100% compatível com .grid() e .pack())
-    - Varredura automática de título, labels, botões, checkboxes, switches, CTkEntry e CTkTabview
+    - Varredura automática dos widgets de texto e seleção do CustomTkinter
     - Suporte a textos dinâmicos via `lang.t("Texto")` e callback opcional `ao_mudar_idioma`
     - Menu suspenso arredondado com engrenagem ⚙️ e janela Translate integrada
     """
@@ -20,20 +22,45 @@ class Idiomas:
         idioma_principal: str,
         arquivo="app.ini",
         ao_mudar_idioma=None,
+        *,
+        caminho_ini=None,
+        analisar_codigo=False,
+        arquivos_codigo=None,
+        posicao="top-right",
+        mostrar_botao=True,
     ):
         if not idioma_principal or not idioma_principal.strip():
             raise ValueError(
                 "Você deve definir 'idioma_principal' (ex: 'Português (Brasil)' ou 'English')."
             )
+        posicoes_validas = {
+            "top-left",
+            "top-right",
+            "bottom-left",
+            "bottom-right",
+        }
+        if posicao not in posicoes_validas:
+            raise ValueError(
+                f"Posição inválida: {posicao!r}. Use uma destas opções: "
+                f"{', '.join(sorted(posicoes_validas))}."
+            )
 
         self.janela = janela
         self.idioma_principal = idioma_principal.strip()
-        self.arquivo = os.path.abspath(arquivo)
+        self.arquivo = os.path.abspath(
+            os.path.expanduser(caminho_ini if caminho_ini is not None else arquivo)
+        )
         self.ao_mudar_idioma = ao_mudar_idioma
         self.ultima_modificacao = 0
         self.menu_popup = None
-
+        self.posicao = posicao
+        self.mostrar_botao = mostrar_botao
+        self.janelas = [janela]
+        self._captura_inicializada = False
+        self._analisar_codigo = analisar_codigo
+        self._arquivos_codigo = arquivos_codigo
         self.mapa_widgets = {}
+        self.mapa_valores = {}
 
         self.config = configparser.ConfigParser(interpolation=None)
         self.config.optionxform = str
@@ -46,7 +73,10 @@ class Idiomas:
         if self.idioma_principal not in self.config:
             self.config.add_section(self.idioma_principal)
 
-        self._injetar_botao_engrenagem()
+        if self.mostrar_botao:
+            self._injetar_botao_engrenagem()
+        else:
+            self.btn_engrenagem = None
         self.janela.after(100, self._inicializar_captura)
 
     def _inicializar_captura(self):
@@ -56,6 +86,7 @@ class Idiomas:
         if self.idioma_principal not in self.config:
             self.config.add_section(self.idioma_principal)
 
+        self._pre_registrar_mensagens()
         eh_ingles = (
             "english" in self.idioma_principal.lower()
             or "en" == self.idioma_principal.lower()
@@ -69,14 +100,24 @@ class Idiomas:
                 "Translate" if eh_ingles else "Traduzir"
             )
 
-        titulo_atual = self.janela.title()
+        for janela in self.janelas:
+            self._capturar_janela(janela, migrar_ids_legados=janela == self.janela)
+
+        self._captura_inicializada = True
+        self.salvar()
+        self.aplicar_idioma_na_tela()
+        self._iniciar_monitoramento()
+
+    def _capturar_janela(self, janela, migrar_ids_legados=False):
+        titulo_atual = janela.title()
         if titulo_atual:
-            self.mapa_widgets["00_titulo"] = (self.janela, "title")
-            if "00_titulo" not in self.config[self.idioma_principal]:
-                self.config[self.idioma_principal]["00_titulo"] = titulo_atual
+            chave_legada = "00_titulo" if migrar_ids_legados else None
+            chave = self._chave_estavel("title", titulo_atual)
+            self._registrar_texto(chave, titulo_atual, chave_legada)
+            self._mapear_widget(chave, janela, "title")
 
         contador = 1
-        for widget in self._listar_todos_widgets(self.janela):
+        for widget in self._listar_todos_widgets(janela):
             if self._pertence_ao_botao_engrenagem(
                 widget
             ) or self._pertence_a_tabview_interno(widget):
@@ -87,34 +128,88 @@ class Idiomas:
                     nome_aba,
                     btn_aba,
                 ) in widget._segmented_button._buttons_dict.items():
-                    chave = f"{contador:02d}"
-                    self.mapa_widgets[chave] = (btn_aba, "tab")
-                    if chave not in self.config[self.idioma_principal]:
-                        self.config[self.idioma_principal][chave] = nome_aba
+                    chave_legada = f"{contador:02d}" if migrar_ids_legados else None
+                    chave = self._chave_estavel("tab", nome_aba)
+                    self._registrar_texto(chave, nome_aba, chave_legada)
+                    self._mapear_widget(chave, btn_aba, "tab")
                     contador += 1
                 continue
 
             if isinstance(widget, ctk.CTkEntry):
                 placeholder = widget.cget("placeholder_text")
                 if placeholder and placeholder.strip():
-                    chave = f"{contador:02d}"
-                    self.mapa_widgets[chave] = (widget, "placeholder")
-                    if chave not in self.config[self.idioma_principal]:
-                        self.config[self.idioma_principal][chave] = placeholder
+                    chave_legada = f"{contador:02d}" if migrar_ids_legados else None
+                    chave = self._chave_estavel("placeholder", placeholder)
+                    self._registrar_texto(chave, placeholder, chave_legada)
+                    self._mapear_widget(chave, widget, "placeholder")
                     contador += 1
+                continue
+
+            if isinstance(
+                widget,
+                (
+                    ctk.CTkOptionMenu,
+                    ctk.CTkComboBox,
+                    ctk.CTkSegmentedButton,
+                ),
+            ):
+                valores = tuple(widget.cget("values") or ())
+                selecao = widget.get()
+                chaves_valores = []
+                for valor in valores:
+                    valor = str(valor)
+                    chave_legada = (
+                        f"{contador:02d}" if migrar_ids_legados else None
+                    )
+                    chave = self._chave_estavel("value", valor)
+                    self._registrar_texto(chave, valor, chave_legada)
+                    self._mapear_widget(chave, widget, "value")
+                    chaves_valores.append(chave)
+                    contador += 1
+                self.mapa_valores[id(widget)] = (
+                    widget,
+                    valores,
+                    selecao,
+                    chaves_valores,
+                )
                 continue
 
             texto_widget = self._obter_texto_widget(widget)
             if texto_widget and texto_widget.strip():
-                chave = f"{contador:02d}"
-                self.mapa_widgets[chave] = (widget, "text")
-                if chave not in self.config[self.idioma_principal]:
-                    self.config[self.idioma_principal][chave] = texto_widget
+                chave_legada = f"{contador:02d}" if migrar_ids_legados else None
+                chave = self._chave_estavel("txt", texto_widget)
+                self._registrar_texto(chave, texto_widget, chave_legada)
+                self._mapear_widget(chave, widget, "text")
                 contador += 1
 
-        self.salvar()
-        self.aplicar_idioma_na_tela()
-        self._iniciar_monitoramento()
+    def _mapear_widget(self, chave, widget, prop):
+        destinos = self.mapa_widgets.setdefault(chave, [])
+        if not any(destino is widget for destino, _ in destinos):
+            destinos.append((widget, prop))
+
+    def _chave_estavel(self, tipo, texto):
+        resumo = hashlib.sha256(texto.encode("utf-8")).hexdigest()[:12]
+        return f"{tipo}_{resumo}"
+
+    def _registrar_texto(self, chave, texto, chave_legada=None):
+        secao_base = self.config[self.idioma_principal]
+        if chave in secao_base:
+            return
+
+        chave_migrada = None
+        if (
+            chave_legada
+            and chave_legada in secao_base
+            and secao_base[chave_legada] == texto
+        ):
+            chave_migrada = chave_legada
+
+        secao_base[chave] = texto
+        if chave_migrada:
+            for secao in self.config.sections():
+                if secao != self.idioma_principal and chave_migrada in self.config[secao]:
+                    self.config[secao][chave] = self.config[secao][chave_migrada]
+                self.config[secao].pop(chave_migrada, None)
 
     def t(self, texto_original: str, **kwargs) -> str:
         """Registra automaticamente mensagens dinâmicas no .ini e retorna a tradução."""
@@ -124,22 +219,10 @@ class Idiomas:
         if self.idioma_principal not in self.config:
             self.config.add_section(self.idioma_principal)
 
-        chave_encontrada = None
-        for k, v in self.config[self.idioma_principal].items():
-            if k.startswith("msg_") and v == texto_original:
-                chave_encontrada = k
-                break
-
-        if not chave_encontrada:
-            msgs_existentes = [
-                k
-                for k in self.config[self.idioma_principal].keys()
-                if k.startswith("msg_")
-            ]
-            chave_encontrada = f"msg_{len(msgs_existentes) + 1:02d}"
-            self.config[self.idioma_principal][chave_encontrada] = (
-                texto_original
-            )
+        chave_esperada = self._chave_estavel("msg", texto_original)
+        mensagem_nova = chave_esperada not in self.config[self.idioma_principal]
+        chave_encontrada = self._registrar_mensagem(texto_original)
+        if mensagem_nova:
             self.salvar()
 
         idioma_ativo = self.get_config("idioma", self.idioma_principal)
@@ -153,6 +236,70 @@ class Idiomas:
 
     traduzir = t
 
+    def _pre_registrar_mensagens(self):
+        if not self._analisar_codigo:
+            return
+
+        caminhos = self._arquivos_codigo
+        if caminhos is None:
+            import __main__
+
+            caminho_principal = getattr(__main__, "__file__", None)
+            if not caminho_principal:
+                raise ValueError(
+                    "Não foi possível localizar o arquivo principal. "
+                    "Informe 'arquivos_codigo' para analisar as mensagens."
+                )
+            caminhos = [caminho_principal]
+        elif isinstance(caminhos, (str, os.PathLike)):
+            caminhos = [caminhos]
+
+        for caminho in caminhos:
+            caminho = os.path.abspath(os.path.expanduser(os.fspath(caminho)))
+            with open(caminho, "r", encoding="utf-8") as arquivo:
+                arvore = ast.parse(arquivo.read(), filename=caminho)
+            for no in ast.walk(arvore):
+                if (
+                    isinstance(no, ast.Call)
+                    and isinstance(no.func, ast.Attribute)
+                    and no.func.attr == "t"
+                    and no.args
+                    and isinstance(no.args[0], ast.Constant)
+                    and isinstance(no.args[0].value, str)
+                ):
+                    self._registrar_mensagem(no.args[0].value)
+
+        self.salvar()
+
+    def _registrar_mensagem(self, texto):
+        chave = self._chave_estavel("msg", texto)
+        if chave not in self.config[self.idioma_principal]:
+            chave_legada = next(
+                (
+                    nome
+                    for nome, valor in self.config[self.idioma_principal].items()
+                    if nome.startswith("msg_") and valor == texto
+                ),
+                None,
+            )
+            self._registrar_texto(chave, texto, chave_legada)
+        return chave
+
+    def registrar_janela(self, toplevel):
+        """Inclui uma CTkToplevel na captura e atualização de idiomas."""
+        if not isinstance(toplevel, ctk.CTkToplevel):
+            raise TypeError("'toplevel' deve ser uma instância de CTkToplevel.")
+        if toplevel not in self.janelas:
+            self.janelas.append(toplevel)
+            if self._captura_inicializada:
+                toplevel.after(
+                    100, lambda: self._capturar_janela(toplevel)
+                )
+                toplevel.after(150, self._aplicar_janela_registrada)
+
+    def _aplicar_janela_registrada(self):
+        self.aplicar_idioma_na_tela()
+
     def _listar_todos_widgets(self, container):
         lista = []
         for filho in container.winfo_children():
@@ -164,7 +311,11 @@ class Idiomas:
 
     def _pertence_ao_botao_engrenagem(self, widget):
         return (
-            widget == self.btn_engrenagem or widget.master == self.btn_engrenagem
+            self.btn_engrenagem is not None
+            and (
+                widget == self.btn_engrenagem
+                or widget.master == self.btn_engrenagem
+            )
         )
 
     def _pertence_a_tabview_interno(self, widget):
@@ -192,10 +343,7 @@ class Idiomas:
     def aplicar_idioma_na_tela(self):
         idioma_ativo = self.get_config("idioma", self.idioma_principal)
 
-        for chave, (widget, prop) in self.mapa_widgets.items():
-            if not widget.winfo_exists():
-                continue
-
+        for chave, destinos in self.mapa_widgets.items():
             texto_original = self.config.get(
                 self.idioma_principal, chave, fallback=""
             )
@@ -204,36 +352,90 @@ class Idiomas:
             )
             if not texto_final.strip():
                 texto_final = texto_original
+            for widget, prop in destinos:
+                if not widget.winfo_exists():
+                    continue
+                if prop == "title":
+                    widget.title(texto_final)
+                elif prop == "text":
+                    widget.configure(text=texto_final)
+                elif prop == "placeholder":
+                    widget.configure(placeholder_text=texto_final)
+                elif prop == "tab":
+                    widget.configure(text=texto_final)
 
-            if prop == "title":
-                self.janela.title(texto_final)
-            elif prop == "text":
-                widget.configure(text=texto_final)
-            elif prop == "placeholder":
-                widget.configure(placeholder_text=texto_final)
-            elif prop == "tab":
-                widget.configure(text=texto_final)
+        for (
+            widget,
+            valores_originais,
+            selecao_original,
+            chaves,
+        ) in self.mapa_valores.values():
+            if not widget.winfo_exists():
+                continue
+            valores_traduzidos = [
+                self._texto_traduzido(chave) for chave in chaves
+            ]
+            selecao_atual = widget.get()
+            indice_selecao = None
+            for indice, valor_original in enumerate(valores_originais):
+                valor_traduzido = valores_traduzidos[indice]
+                if selecao_atual in (valor_original, valor_traduzido):
+                    indice_selecao = indice
+                    break
+            if indice_selecao is None and selecao_atual == selecao_original:
+                indice_selecao = next(
+                    (
+                        indice
+                        for indice, valor in enumerate(valores_originais)
+                        if valor == selecao_original
+                    ),
+                    None,
+                )
+            widget.configure(values=valores_traduzidos)
+            if indice_selecao is not None:
+                widget.set(valores_traduzidos[indice_selecao])
 
         if self.ao_mudar_idioma:
             self.ao_mudar_idioma()
 
-        self.btn_engrenagem.lift()
+        if self.btn_engrenagem is not None:
+            self.btn_engrenagem.lift()
+
+    def _texto_traduzido(self, chave):
+        idioma_ativo = self.get_config("idioma", self.idioma_principal)
+        original = self.config.get(self.idioma_principal, chave, fallback="")
+        traduzido = self.config.get(idioma_ativo, chave, fallback=original)
+        return traduzido if traduzido.strip() else original
 
     def _injetar_botao_engrenagem(self):
-        """Usa .place() no canto superior direito para nunca conflitar com .grid() ou .pack()."""
+        """Usa .place() para não conflitar com .grid() ou .pack()."""
         self.btn_engrenagem = ctk.CTkButton(
             self.janela,
             text="⚙️",
             width=34,
             height=34,
-            corner_radius=8,
+            corner_radius=0,
             font=("Segoe UI Emoji", 15),
             fg_color="transparent",
-            hover_color=("#E2E2E2", "#2F2F2F"),
+            hover_color="transparent",
+            border_width=0,
             command=self._alternar_menu,
         )
-        self.btn_engrenagem.place(relx=1.0, x=-10, y=8, anchor="ne")
+        relx = 0.0 if self.posicao.endswith("left") else 1.0
+        rely = 0.0 if self.posicao.startswith("top") else 1.0
+        x = 10 if relx == 0.0 else -10
+        y = 8 if rely == 0.0 else -8
+        anchor = ("n" if rely == 0.0 else "s") + (
+            "w" if relx == 0.0 else "e"
+        )
+        self.btn_engrenagem.place(
+            relx=relx, rely=rely, x=x, y=y, anchor=anchor
+        )
         self.btn_engrenagem.lift()
+
+    def abrir_menu(self):
+        """Abre o menu de idiomas, inclusive quando o botão automático está desativado."""
+        self._alternar_menu()
 
     def _alternar_menu(self):
         if self.menu_popup is not None and self.menu_popup.winfo_exists():
@@ -324,13 +526,24 @@ class Idiomas:
         largura_menu = max(195, popup.winfo_reqwidth())
         altura_menu = popup.winfo_reqheight()
 
-        btn_x = self.btn_engrenagem.winfo_rootx()
-        btn_y = self.btn_engrenagem.winfo_rooty()
-        btn_w = self.btn_engrenagem.winfo_width()
-        btn_h = self.btn_engrenagem.winfo_height()
+        if self.btn_engrenagem is not None:
+            btn_x = self.btn_engrenagem.winfo_rootx()
+            btn_y = self.btn_engrenagem.winfo_rooty()
+            btn_w = self.btn_engrenagem.winfo_width()
+            btn_h = self.btn_engrenagem.winfo_height()
+        else:
+            btn_x = self.janela.winfo_rootx()
+            btn_y = self.janela.winfo_rooty()
+            if self.posicao.startswith("bottom"):
+                btn_y += self.janela.winfo_height()
+            btn_w = self.janela.winfo_width()
+            btn_h = 0
 
-        pos_x = (btn_x + btn_w) - largura_menu
-        pos_y = btn_y + btn_h + 4
+        pos_x = btn_x if self.posicao.endswith("left") else btn_x + btn_w - largura_menu
+        if self.posicao.startswith("top"):
+            pos_y = btn_y + btn_h + 4
+        else:
+            pos_y = btn_y - altura_menu - 4
 
         popup.geometry(f"{largura_menu}x{altura_menu}+{pos_x}+{pos_y}")
         popup.focus_force()
@@ -392,6 +605,7 @@ class Idiomas:
         self.salvar()
 
     def salvar(self):
+        os.makedirs(os.path.dirname(self.arquivo), exist_ok=True)
         with open(self.arquivo, "w", encoding="utf-8") as f:
             self.config.write(f)
         self.ultima_modificacao = os.path.getmtime(self.arquivo)
